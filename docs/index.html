@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>devclean — Reclaim your disk space in seconds</title>
+  <meta name="description" content="Stop running npkill, docker prune, brew cleanup separately. One CLI to scan and clean node_modules, Docker, brew, pip, cargo, Xcode and more.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #0a0a0b;
+      --surface: #141416;
+      --surface2: #1a1a1f;
+      --border: #2a2a30;
+      --text: #eeeef0;
+      --muted: #8888a0;
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.15);
+      --green: #34d399;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --dim: #555566;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 80px 20px 60px;
+      background: radial-gradient(ellipse at top, var(--accent-glow) 0%, transparent 60%);
+    }
+    .hero-badge {
+      display: inline-block;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+    .hero-badge span { color: var(--green); }
+    .hero h1 {
+      font-size: clamp(32px, 5vw, 56px);
+      font-weight: 700;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+      margin-bottom: 16px;
+    }
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 520px;
+      margin: 0 auto 32px;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 15px;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--accent); }
+
+    /* Terminal */
+    .terminal-wrap {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    .terminal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-top: -20px;
+    }
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 12px 16px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+    .terminal-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .terminal-dot.r { background: #ff5f57; }
+    .terminal-dot.y { background: #febc2e; }
+    .terminal-dot.g { background: #28c840; }
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      color: var(--dim);
+    }
+    .terminal-body {
+      padding: 20px;
+      font: 13px/1.8 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      overflow-x: auto;
+    }
+    .terminal-body .prompt { color: var(--green); }
+    .terminal-body .cmd { color: var(--text); }
+    .terminal-body .flag { color: var(--accent); }
+    .terminal-body .out { color: var(--muted); }
+    .terminal-body .err { color: var(--red); }
+    .terminal-body .warn { color: var(--yellow); }
+    .terminal-body .dim { color: var(--dim); }
+    .terminal-body .bold { color: var(--text); font-weight: 700; }
+
+    /* Sections */
+    .container { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+    section { padding: 80px 0; }
+    section h2 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    section .subtitle {
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 48px;
+      font-size: 16px;
+    }
+
+    /* Features */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .feature {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      transition: border-color 0.2s;
+    }
+    .feature:hover { border-color: var(--accent); }
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--accent-glow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+    .feature h3 { font-size: 16px; margin-bottom: 8px; }
+    .feature p { font-size: 14px; color: var(--muted); }
+
+    /* Install */
+    .install-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      max-width: 500px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .install-cmd {
+      font: 15px/1 'SF Mono', 'Fira Code', monospace;
+      color: var(--green);
+    }
+    .copy-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+
+    /* Pricing */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+    .plan {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+    }
+    .plan.featured { border-color: var(--accent); }
+    .plan-name { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .plan-price { font-size: 36px; font-weight: 700; margin-bottom: 20px; }
+    .plan-price span { font-size: 16px; color: var(--muted); font-weight: 400; }
+    .plan-features { list-style: none; }
+    .plan-features li {
+      padding: 6px 0;
+      font-size: 14px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .plan-features li::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+    .plan-features li.yes::before { background: var(--green); }
+    .plan-features li.no::before { background: var(--dim); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 20px;
+      text-align: center;
+      color: var(--dim);
+      font-size: 13px;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 768px) {
+      .features { grid-template-columns: 1fr; }
+      .pricing-grid { grid-template-columns: 1fr; }
+      .hero { padding: 60px 20px 40px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-badge"><span>v0.1.0</span> &mdash; now on npm</div>
+    <h1>Reclaim your disk space<br><span class="gradient">in seconds</span></h1>
+    <p>Stop running npkill, docker prune, brew cleanup separately. One CLI. Everything clean.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="#install">npm i -g devclean-cli</a>
+      <a class="btn btn-secondary" href="https://github.com/arikmozh/devclean">View on GitHub</a>
+    </div>
+  </div>
+
+  <!-- Terminal Demo -->
+  <div class="terminal-wrap">
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot r"></div>
+        <div class="terminal-dot y"></div>
+        <div class="terminal-dot g"></div>
+        <div class="terminal-title">Terminal</div>
+      </div>
+      <div class="terminal-body">
+        <span class="prompt">$</span> <span class="cmd">devclean scan</span><br>
+        <br>
+        <span class="out">  devclean &mdash; scanning</span> <span class="dim">/Users/you</span><br>
+        <br>
+        <span class="out">  Scanning node_modules...</span> <span class="prompt">found 23</span> <span class="dim">(4.7 GB)</span><br>
+        <span class="out">  Scanning Cargo targets...</span> <span class="prompt">found 2</span> <span class="dim">(1.2 GB)</span><br>
+        <span class="out">  Scanning package manager caches...</span> <span class="prompt">found 2</span> <span class="dim">(890.0 MB)</span><br>
+        <span class="out">  Scanning Docker...</span> <span class="prompt">found 3 item(s)</span><br>
+        <span class="out">  Scanning Homebrew cache...</span> <span class="dim">2.1 GB</span><br>
+        <span class="out">  Scanning Xcode DerivedData...</span> <span class="dim">3.4 GB</span><br>
+        <br>
+        <span class="bold">  Total reclaimable: 12.3 GB</span><br>
+        <span class="out">  Run</span> <span class="cmd"> devclean clean</span> <span class="out">to free this space</span><br>
+      </div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <section>
+    <div class="container">
+      <h2>One command to clean everything</h2>
+      <p class="subtitle">No more juggling five different cleanup tools.</p>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">&#128230;</div>
+          <h3>All-in-one</h3>
+          <p>node_modules, Docker, brew, pip, cargo, Xcode &mdash; all detected and cleaned in one scan.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#128274;</div>
+          <h3>Safe by default</h3>
+          <p>Scan is read-only. Use --dry-run to preview and --older-than to protect recent projects.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#9889;</div>
+          <h3>Fast</h3>
+          <p>Scans your entire home directory in seconds. No background daemons, no waiting.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#127919;</div>
+          <h3>Selective cleaning</h3>
+          <p>Clean specific targets with flags. Remove only Docker caches, or only old node_modules.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#128640;</div>
+          <h3>Zero config</h3>
+          <p>npm install, run, done. No config files, no setup wizards, no accounts.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">&#127760;</div>
+          <h3>Cross-platform</h3>
+          <p>Full support for macOS and Linux. Works everywhere you develop.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section id="install">
+    <div class="container">
+      <h2>Get started in 10 seconds</h2>
+      <p class="subtitle">One command. That's it.</p>
+      <div class="install-box">
+        <code class="install-cmd">npm i -g devclean-cli</code>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('npm i -g devclean-cli');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section id="pricing">
+    <div class="container">
+      <h2>Simple pricing</h2>
+      <p class="subtitle">Free to start. Upgrade when you need more.</p>
+      <div class="pricing-grid">
+        <div class="plan">
+          <div class="plan-name">Free</div>
+          <div class="plan-price">$0</div>
+          <ul class="plan-features">
+            <li class="yes">Scan entire system</li>
+            <li class="yes">Clean node_modules</li>
+            <li class="yes">Clean Docker images &amp; containers</li>
+            <li class="yes">Clean brew, pip, cargo caches</li>
+            <li class="yes">Clean Xcode DerivedData</li>
+            <li class="yes">Dry-run preview</li>
+          </ul>
+        </div>
+        <div class="plan featured">
+          <div class="plan-name">Pro</div>
+          <div class="plan-price">$6 <span>/mo</span></div>
+          <a class="btn btn-primary" href="#pricing" style="width:100%;justify-content:center;margin-bottom:16px;font-size:14px;">Get Pro &mdash; $6/mo</a>
+          <ul class="plan-features">
+            <li class="yes">Everything in Free</li>
+            <li class="yes">Scheduled auto-cleaning</li>
+            <li class="yes">Custom rules</li>
+            <li class="yes">Size trending over time</li>
+            <li class="yes">Team reports</li>
+          </ul>
+          <p style="margin-top:16px;font-size:12px;color:var(--dim);text-align:center;">After purchase, run: <code style="color:var(--green);">devclean activate &lt;key&gt;</code></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Made by <a href="https://github.com/arikmozh">arikmozh</a> &middot; <a href="https://github.com/arikmozh/devclean">GitHub</a> &middot; <a href="https://www.npmjs.com/package/devclean-cli">npm</a></p>
+  </footer>
+
+</body>
+</html>
