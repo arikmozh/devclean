@@ -1,6 +1,6 @@
 {
   "name": "devclean-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "All-in-one disk cleanup for developers. Clean node_modules, Docker, brew cache, pip, cargo, and build artifacts.",
   "bin": {
     "devclean": "src/cli.js"
@@ -9,6 +9,7 @@
     "start": "node src/cli.js"
   },
   "dependencies": {
+    "axios": "^1.6.0",
     "chalk": "^4.1.0",
     "commander": "^12.0.0"
   },

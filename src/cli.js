@@ -1,16 +1,140 @@
 #!/usr/bin/env node
 const { Command } = require('commander');
+const axios = require('axios');
 const chalk = require('chalk');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const program = new Command();
+const RC_PATH = path.join(os.homedir(), '.devcleanrc');
+const INSTANCE_NAME = os.hostname();
 
 program
   .name('devclean')
   .description('All-in-one disk cleanup for developers')
-  .version('0.1.0');
+  .version('0.2.0');
+
+// ── License helpers ──
+
+function readRC() {
+  try {
+    return JSON.parse(fs.readFileSync(RC_PATH, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeRC(data) {
+  fs.writeFileSync(RC_PATH, JSON.stringify(data, null, 2));
+}
+
+function deleteRC() {
+  try { fs.unlinkSync(RC_PATH); } catch {}
+}
+
+async function isProUser() {
+  const rc = readRC();
+  if (!rc || !rc.license_key || rc.status !== 'active') return false;
+
+  const now = Date.now();
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  if (now - (rc.last_validated || 0) < ONE_DAY) return true;
+
+  try {
+    const res = await axios.post('https://api.lemonsqueezy.com/v1/licenses/validate', {
+      license_key: rc.license_key,
+      instance_name: INSTANCE_NAME,
+    });
+    const valid = res.data?.valid;
+    writeRC({ ...rc, status: valid ? 'active' : 'expired', last_validated: now });
+    return valid;
+  } catch {
+    return true; // offline grace — trust cache
+  }
+}
+
+function showProGate() {
+  console.log(chalk.yellow('\n  ⚡ This is a Pro feature.'));
+  console.log(chalk.dim('  Upgrade at https://arikmozh.github.io/devclean/#pricing'));
+  console.log(chalk.dim('  Then run: devclean activate <your-license-key>\n'));
+  process.exit(0);
+}
+
+// ── License commands ──
+
+program
+  .command('activate <key>')
+  .description('Activate a Pro license key')
+  .action(async (key) => {
+    console.log(chalk.dim('Activating license...'));
+    try {
+      const res = await axios.post('https://api.lemonsqueezy.com/v1/licenses/activate', {
+        license_key: key,
+        instance_name: INSTANCE_NAME,
+      });
+      if (res.data?.activated) {
+        writeRC({
+          license_key: key,
+          instance_id: res.data.instance.id,
+          activated_at: Date.now(),
+          last_validated: Date.now(),
+          status: 'active',
+        });
+        console.log(chalk.green('\n  ✓ License activated! Pro features are now enabled.\n'));
+      } else {
+        console.error(chalk.red('Activation failed:'), res.data?.error || 'Invalid key');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message;
+      console.error(chalk.red('Activation failed:'), msg);
+    }
+  });
+
+program
+  .command('deactivate')
+  .description('Deactivate your Pro license on this machine')
+  .action(async () => {
+    const rc = readRC();
+    if (!rc || !rc.license_key) {
+      console.log(chalk.yellow('No active license found.'));
+      return;
+    }
+    try {
+      await axios.post('https://api.lemonsqueezy.com/v1/licenses/deactivate', {
+        license_key: rc.license_key,
+        instance_id: rc.instance_id,
+      });
+      deleteRC();
+      console.log(chalk.green('License deactivated. Pro features disabled.'));
+    } catch {
+      deleteRC();
+      console.log(chalk.yellow('Local license removed.'));
+    }
+  });
+
+program
+  .command('status')
+  .description('Show current license status')
+  .action(async () => {
+    const rc = readRC();
+    if (!rc || !rc.license_key) {
+      console.log(chalk.bold('\n  Plan: ') + 'Free');
+      console.log(chalk.dim('  Activate: devclean activate <key>'));
+      console.log(chalk.dim('  Get Pro:  https://arikmozh.github.io/devclean/#pricing\n'));
+      return;
+    }
+    const masked = rc.license_key.slice(0, 8) + '...' + rc.license_key.slice(-4);
+    console.log(chalk.bold('\n  Plan:     ') + chalk.green('Pro'));
+    console.log(chalk.bold('  Key:      ') + masked);
+    console.log(chalk.bold('  Status:   ') + (rc.status === 'active' ? chalk.green('Active') : chalk.red(rc.status)));
+    console.log(chalk.bold('  Activated:') + ' ' + new Date(rc.activated_at).toLocaleDateString());
+    if (rc.last_validated) {
+      console.log(chalk.bold('  Verified: ') + new Date(rc.last_validated).toLocaleDateString());
+    }
+    console.log();
+  });
 
 // Utility: format bytes to human-readable
 function formatSize(bytes) {
@@ -205,7 +329,13 @@ program
   .option('--no-brew', 'Skip Homebrew cache scan')
   .option('--no-pip', 'Skip pip cache scan')
   .option('--no-xcode', 'Skip Xcode DerivedData scan')
-  .action((opts) => {
+  .option('-r, --report <file>', 'Export scan results to JSON (Pro)')
+  .action(async (opts) => {
+    // Pro gate for --report
+    if (opts.report && !(await isProUser())) {
+      showProGate();
+    }
+
     const scanPath = path.resolve(opts.path);
     console.log(chalk.bold(`\n  devclean — scanning ${scanPath}\n`));
 
@@ -317,6 +447,12 @@ program
       }
     }
 
+    // Export report (Pro)
+    if (opts.report) {
+      fs.writeFileSync(opts.report, JSON.stringify({ scannedAt: new Date().toISOString(), scanPath, totalSize, findings }, null, 2));
+      console.log(chalk.green(`\n  Report exported to ${opts.report}`));
+    }
+
     // Summary
     console.log(chalk.bold(`\n  Total reclaimable: ${chalk.green(formatSize(totalSize))}`));
     if (findings.length) {
@@ -340,7 +476,19 @@ program
   .option('--caches', 'Clean only package manager caches (npm/yarn)')
   .option('--older-than <days>', 'Only clean items older than N days')
   .option('--dry-run', 'Show what would be deleted without deleting')
-  .action((opts) => {
+  .option('--schedule <cron>', 'Schedule automatic cleanup with cron expression (Pro)')
+  .action(async (opts) => {
+    // Pro gate for --schedule
+    if (opts.schedule && !(await isProUser())) {
+      showProGate();
+    }
+
+    if (opts.schedule) {
+      console.log(chalk.green(`\n  Scheduled cleanup with cron: ${opts.schedule}`));
+      console.log(chalk.dim('  (Scheduled cleanup is a Pro feature — coming soon)\n'));
+      return;
+    }
+
     const scanPath = path.resolve(opts.path);
     const specific = opts.nodeModules || opts.docker || opts.brew || opts.pip || opts.cargo || opts.xcode || opts.caches;
     const cleanAll = !specific;
